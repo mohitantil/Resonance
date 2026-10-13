@@ -12,6 +12,10 @@ dotnet_sdk/
 # Planning / scratch files
 implementation_plan.md
 FutureScope.md
+POWERSHELL_GUIDE.md
+
+# Releases
+Releases/
 
 # Windows build outputs
 windows/output/

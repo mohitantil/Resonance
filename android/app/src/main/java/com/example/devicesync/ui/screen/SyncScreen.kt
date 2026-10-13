@@ -200,7 +200,10 @@ fun SyncScreen(viewModel: SyncViewModel) {
                         items = clipboardItems,
                         key = { it.clipboardId }
                     ) { item ->
-                        ClipboardHistoryCard(item = item)
+                        ClipboardHistoryCard(
+                            item = item,
+                            onCopy = { text -> viewModel.copyToClipboard(clipboardManager, text) }
+                        )
                     }
 
                     if (clipboardItems.isEmpty()) {

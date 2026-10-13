@@ -121,6 +121,14 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
         pasteText = text
     }
 
+    fun copyToClipboard(clipboardManager: ClipboardManager, text: String) {
+        if (text.isEmpty()) return
+        val clip = android.content.ClipData.newPlainText("DeviceSync", text)
+        clipboardManager.setPrimaryClip(clip)
+        pasteText = text
+        showStatus("Copied to clipboard ✓")
+    }
+
     fun sendPasteText() {
         if (pasteText.isBlank()) return
 

@@ -91,6 +91,53 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(RefreshHistory);
     }
 
+    private async void OnSendCurrentClipboardClicked(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (Clipboard.ContainsText())
+            {
+                var text = Clipboard.GetText();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    await App.SyncEngine.SendClipboardTextAsync(text);
+                    RefreshHistory();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to read current clipboard: {ex.Message}");
+        }
+    }
+
+    private async void OnManualClipboardSendClicked(object sender, RoutedEventArgs e)
+    {
+        var text = ManualClipboardInput.Text.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+
+        await App.SyncEngine.SendClipboardTextAsync(text);
+        ManualClipboardInput.Clear();
+        RefreshHistory();
+    }
+
+    private void OnManualClipboardInputKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            OnManualClipboardSendClicked(sender, e);
+        }
+    }
+
+    private async void OnClipboardItemDoubleClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (ClipboardList.SelectedItem is ClipboardDisplayItem item && !string.IsNullOrEmpty(item.Content))
+        {
+            await App.SyncEngine.SendClipboardTextAsync(item.Content);
+            RefreshHistory();
+        }
+    }
+
     // ─── File Transfer UI handlers ──────────────────────────────────────
 
     private void OnTabClipboardClicked(object sender, RoutedEventArgs e)

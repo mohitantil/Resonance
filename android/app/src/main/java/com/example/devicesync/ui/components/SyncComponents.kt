@@ -440,37 +440,57 @@ fun PasteAndSendCard(
 @Composable
 fun ClipboardHistoryCard(
     item: ClipboardItem,
+    onCopy: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
     val isAndroid = item.source == "android"
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(enabled = onCopy != null) { onCopy?.invoke(item.content) },
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = SyncColors.Surface1)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = item.content,
-                color = SyncColors.Text,
-                fontSize = 14.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (isAndroid) "📱 Android" else "💻 Windows",
-                    color = SyncColors.Blue,
-                    fontSize = 11.sp
+                    text = item.content,
+                    color = SyncColors.Text,
+                    fontSize = 14.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = timeFormat.format(Date(item.timestamp)),
-                    color = SyncColors.Overlay,
-                    fontSize = 11.sp
-                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row {
+                    Text(
+                        text = if (isAndroid) "📱 Android" else "💻 Windows",
+                        color = if (isAndroid) SyncColors.Blue else SyncColors.Mauve,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = timeFormat.format(Date(item.timestamp)),
+                        color = SyncColors.Overlay,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            if (onCopy != null) {
+                IconButton(onClick = { onCopy(item.content) }) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy to clipboard",
+                        tint = SyncColors.Mauve,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }

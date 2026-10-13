@@ -205,28 +205,62 @@
             <!-- ════════════════════════════════════════════════════════════ -->
             <Grid x:Name="ClipboardView" Visibility="Visible">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/> <!-- Quick Send Controls -->
+                    <RowDefinition Height="Auto"/> <!-- Section Header -->
+                    <RowDefinition Height="*"/>    <!-- Clipboard List -->
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Text="📋 Clipboard Journal (last 10)" 
+                <!-- Quick Send Controls -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                    <Button x:Name="SendCurrentClipboardBtn" Content="📋 Send Windows Clipboard to Phone" 
+                            Style="{StaticResource ActionBtn}" Background="#CBA6F7" Foreground="#1E1E2E"
+                            Click="OnSendCurrentClipboardClicked"/>
+
+                    <Border Margin="0,8,0,0" Background="#313244" CornerRadius="8" Padding="10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="ManualClipboardInput" Grid.Column="0" 
+                                     Background="#181825" Foreground="#CDD6F4" BorderBrush="#45475A" BorderThickness="1" 
+                                     Padding="8,6" FontSize="12" VerticalAlignment="Center"
+                                     ToolTip="Type or paste any text to send to phone"
+                                     KeyDown="OnManualClipboardInputKeyDown"/>
+                            <Button x:Name="ManualClipboardSendBtn" Grid.Column="1" Content="Send ⚡" 
+                                    Style="{StaticResource SmallBtn}" Background="#A6E3A1" Foreground="#1E1E2E" FontWeight="SemiBold"
+                                    Margin="6,0,0,0" Padding="12,6" Click="OnManualClipboardSendClicked"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <TextBlock Grid.Row="1" Text="📋 Clipboard Journal (click to re-send to phone)" 
                            FontSize="12" Foreground="#A6ADC8" Margin="2,0,0,6"/>
 
-                <Border Grid.Row="1" Background="#313244" CornerRadius="8" Padding="4">
+                <Border Grid.Row="2" Background="#313244" CornerRadius="8" Padding="4">
                     <ListBox x:Name="ClipboardList" Background="Transparent" BorderThickness="0"
-                             Foreground="#CDD6F4" FontSize="12" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                             Foreground="#CDD6F4" FontSize="12" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             MouseDoubleClick="OnClipboardItemDoubleClicked">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="#45475A" CornerRadius="6" Padding="10,8" Margin="2">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Content}" TextTrimming="CharacterEllipsis" 
-                                                   MaxHeight="40" Foreground="#CDD6F4"/>
-                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                            <TextBlock Text="{Binding Source}" FontSize="10" Foreground="#89B4FA"
-                                                       Margin="0,0,12,0"/>
-                                            <TextBlock Text="{Binding TimeDisplay}" FontSize="10" Foreground="#6C7086"/>
+                                <Border Background="#45475A" CornerRadius="6" Padding="10,8" Margin="2" Cursor="Hand">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Content}" TextTrimming="CharacterEllipsis" 
+                                                       MaxHeight="40" Foreground="#CDD6F4"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <TextBlock Text="{Binding Source}" FontSize="10" Foreground="#89B4FA"
+                                                           Margin="0,0,12,0"/>
+                                                <TextBlock Text="{Binding TimeDisplay}" FontSize="10" Foreground="#6C7086"/>
+                                            </StackPanel>
                                         </StackPanel>
-                                    </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="Send ↗" FontSize="10" Foreground="#CBA6F7" 
+                                                   VerticalAlignment="Center" Margin="6,0,2,0"/>
+                                    </Grid>
                                 </Border>
                             </DataTemplate>
                         </ListBox.ItemTemplate>

@@ -63,7 +63,9 @@ class SyncForegroundService : Service() {
         private const val TAG = "SyncService"
         private const val CHANNEL_ID = "sync_channel"
         private const val TRANSFER_CHANNEL_ID = "transfer_channel"
+        private const val CLIPBOARD_CHANNEL_ID = "clipboard_channel"
         private const val NOTIFICATION_ID = 1
+        private const val CLIPBOARD_NOTIFICATION_ID = 2
         private const val PORT = 7777
 
         // Shared: the Activity reads this to show connection status and send clipboard
@@ -592,10 +594,15 @@ class SyncForegroundService : Service() {
         if (inserted) {
             lastSetContent = content
             withContext(Dispatchers.Main) {
-                val clip = ClipData.newPlainText("sync", content)
-                clipboardManager.setPrimaryClip(clip)
+                try {
+                    val clip = ClipData.newPlainText("sync", content)
+                    clipboardManager.setPrimaryClip(clip)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Direct setPrimaryClip skipped by OS (requires user focus): ${e.message}")
+                }
             }
             updateNotification("Received: ${content.take(30)}...")
+            showClipboardReceivedNotification(content)
         }
     }
 
@@ -670,6 +677,16 @@ class SyncForegroundService : Service() {
                 description = "Notifications for received files"
             }
             manager.createNotificationChannel(transferChannel)
+
+            // High priority channel for clipboard sync items
+            val clipboardChannel = NotificationChannel(
+                CLIPBOARD_CHANNEL_ID,
+                "Clipboard Sync",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications with quick copy action for text received from PC"
+            }
+            manager.createNotificationChannel(clipboardChannel)
         }
     }
 
@@ -711,6 +728,49 @@ class SyncForegroundService : Service() {
 
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify((System.currentTimeMillis() % 10000).toInt() + 100, notification)
+    }
+
+    private fun showClipboardReceivedNotification(content: String) {
+        val copyIntent = Intent(this, ClipboardCopyActivity::class.java).apply {
+            putExtra(ClipboardCopyActivity.EXTRA_CONTENT, content)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+
+        val pendingCopyIntent = PendingIntent.getActivity(
+            this,
+            (System.currentTimeMillis() % 10000).toInt(),
+            copyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+
+        val pendingOpenAppIntent = PendingIntent.getActivity(
+            this,
+            0,
+            openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, CLIPBOARD_CHANNEL_ID)
+            .setContentTitle("📋 Windows Clipboard")
+            .setContentText(content)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
+            .setSmallIcon(android.R.drawable.ic_menu_set_as)
+            .setContentIntent(pendingOpenAppIntent)
+            .addAction(
+                android.R.drawable.ic_menu_set_as,
+                "📋 Copy to Clipboard",
+                pendingCopyIntent
+            )
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(CLIPBOARD_NOTIFICATION_ID, notification)
     }
 }
 

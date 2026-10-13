@@ -51,6 +51,16 @@ namespace WindowsAgent
         {
             if (msg == WM_CLIPBOARDUPDATE)
             {
+                // Non-blocking async retrieval with retry to allow locking process to release clipboard
+                _ = ReadClipboardWithRetryAsync();
+            }
+            return IntPtr.Zero;
+        }
+
+        private async System.Threading.Tasks.Task ReadClipboardWithRetryAsync(int maxRetries = 7, int initialDelayMs = 30)
+        {
+            for (int i = 0; i < maxRetries; i++)
+            {
                 try
                 {
                     if (Clipboard.ContainsText())
@@ -59,15 +69,29 @@ namespace WindowsAgent
                         if (!string.IsNullOrEmpty(text))
                         {
                             ClipboardTextChanged?.Invoke(text);
+                            return;
                         }
                     }
+                    else
+                    {
+                        // Successfully opened and verified it doesn't contain text (e.g. image or files)
+                        return;
+                    }
+                }
+                catch (COMException comEx)
+                {
+                    Debug.WriteLine($"ClipboardListener: Lock contention on attempt {i + 1}/{maxRetries}: {comEx.Message}");
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"ClipboardListener: Error reading clipboard: {ex.Message}");
+                    Debug.WriteLine($"ClipboardListener: Error reading clipboard on attempt {i + 1}: {ex.Message}");
+                }
+
+                if (i < maxRetries - 1)
+                {
+                    await System.Threading.Tasks.Task.Delay(initialDelayMs * (i + 1));
                 }
             }
-            return IntPtr.Zero;
         }
 
         public void Dispose()

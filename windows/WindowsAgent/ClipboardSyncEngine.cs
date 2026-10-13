@@ -107,6 +107,17 @@ namespace WindowsAgent
                     null,
                     TimeSpan.FromSeconds(30),
                     TimeSpan.FromSeconds(30));
+
+                // Flush any clipboard content that was queued while disconnected
+                if (!string.IsNullOrEmpty(_pendingOutboundClipboard))
+                {
+                    var queuedText = _pendingOutboundClipboard;
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(300);
+                        await SendClipboardTextAsync(queuedText);
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -141,6 +152,8 @@ namespace WindowsAgent
             StatusChanged?.Invoke("Disconnected");
         }
 
+        private string? _pendingOutboundClipboard = null;
+
         /// <summary>
         /// Called when Windows clipboard changes.
         /// Sends the new content to the Android agent.
@@ -149,6 +162,17 @@ namespace WindowsAgent
         {
             // Skip if this is the same content we just set from a remote update
             if (text == _lastClipboardContent) return;
+
+            await SendClipboardTextAsync(text);
+        }
+
+        /// <summary>
+        /// Sends clipboard text to the Android agent. Can be called automatically by the
+        /// clipboard listener or manually from the UI.
+        /// </summary>
+        public async Task<bool> SendClipboardTextAsync(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
 
             _lastClipboardContent = text;
             var clipboardId = Guid.NewGuid().ToString();
@@ -179,12 +203,25 @@ namespace WindowsAgent
                         _wsCancellation?.Token ?? CancellationToken.None);
 
                     StatusChanged?.Invoke($"Sent: {text[..Math.Min(text.Length, 30)]}...");
+                    _pendingOutboundClipboard = null;
+                    return true;
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"Error sending clipboard: {ex}");
-                    StatusChanged?.Invoke("Send failed, reconnecting...");
+                    StatusChanged?.Invoke("Send failed, will retry on reconnect...");
+                    _lastClipboardContent = null; // Allow retry on next copy
+                    _pendingOutboundClipboard = text;
+                    return false;
                 }
+            }
+            else
+            {
+                // Queue to be sent as soon as connection is established
+                _pendingOutboundClipboard = text;
+                _lastClipboardContent = null; // Allow retry if user copies again
+                StatusChanged?.Invoke($"Queued for send ({text[..Math.Min(text.Length, 20)]}...)");
+                return false;
             }
         }
 
