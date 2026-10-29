@@ -1,7 +1,11 @@
 using System;
+using System.Buffers.Binary;
 using System.Diagnostics;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace WindowsAgent
 {
@@ -18,9 +22,10 @@ namespace WindowsAgent
     {
         private const int GcmTagLengthBytes = 16;   // 128 bits
         private const int GcmIvLengthBytes = 12;
+        public const int StreamChunkSize = 64 * 1024;
 
         private ECDiffieHellman? _localKeyPair;
-        private byte[]? _sharedSecret;
+        private volatile byte[]? _sharedSecret;
 
         /// <summary>
         /// Whether a shared secret has been derived (key exchange is complete).
@@ -80,15 +85,14 @@ namespace WindowsAgent
         /// </summary>
         public string Encrypt(string plaintext)
         {
-            if (_sharedSecret == null)
-                throw new InvalidOperationException("Shared secret not established.");
+            var key = _sharedSecret ?? throw new InvalidOperationException("Shared secret not established.");
 
             var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
             var iv = RandomNumberGenerator.GetBytes(GcmIvLengthBytes);
             var ciphertext = new byte[plaintextBytes.Length];
             var tag = new byte[GcmTagLengthBytes];
 
-            using var aes = new AesGcm(_sharedSecret, GcmTagLengthBytes);
+            using var aes = new AesGcm(key, GcmTagLengthBytes);
             aes.Encrypt(iv, plaintextBytes, ciphertext, tag);
 
             // Combine ciphertext + tag (Android's Cipher.doFinal appends the tag)
@@ -107,8 +111,7 @@ namespace WindowsAgent
         /// </summary>
         public string Decrypt(string encryptedPayload)
         {
-            if (_sharedSecret == null)
-                throw new InvalidOperationException("Shared secret not established.");
+            var key = _sharedSecret ?? throw new InvalidOperationException("Shared secret not established.");
 
             var parts = encryptedPayload.Split(':', 2);
             if (parts.Length != 2)
@@ -124,10 +127,128 @@ namespace WindowsAgent
             Buffer.BlockCopy(combined, ciphertext.Length, tag, 0, GcmTagLengthBytes);
 
             var plaintext = new byte[ciphertext.Length];
-            using var aes = new AesGcm(_sharedSecret, GcmTagLengthBytes);
+            using var aes = new AesGcm(key, GcmTagLengthBytes);
             aes.Decrypt(iv, ciphertext, tag, plaintext);
 
             return Encoding.UTF8.GetString(plaintext);
+        }
+
+        /// <summary>
+        /// Encrypt a stream using 64 KB AES-256-GCM chunks.
+        /// </summary>
+        public async Task EncryptStreamChunkedAsync(
+            Stream input,
+            Stream output,
+            Action<long>? onBytesProcessed = null,
+            CancellationToken ct = default)
+        {
+            var key = _sharedSecret ?? throw new InvalidOperationException("Shared secret not established.");
+
+            var baseIv = RandomNumberGenerator.GetBytes(GcmIvLengthBytes);
+            await output.WriteAsync(baseIv, ct);
+
+            var plainBuf = new byte[StreamChunkSize];
+            var cipherBuf = new byte[StreamChunkSize + GcmTagLengthBytes];
+            var lenBytes = new byte[4];
+            ulong chunkIndex = 0;
+            long totalPlain = 0;
+
+            using var aes = new AesGcm(key, GcmTagLengthBytes);
+
+            while (true)
+            {
+                int readTotal = 0;
+                while (readTotal < plainBuf.Length)
+                {
+                    int r = await input.ReadAsync(plainBuf.AsMemory(readTotal, plainBuf.Length - readTotal), ct);
+                    if (r == 0) break;
+                    readTotal += r;
+                }
+                if (readTotal == 0) break;
+
+                var chunkIv = DeriveChunkIv(baseIv, chunkIndex++);
+                aes.Encrypt(
+                    chunkIv,
+                    plainBuf.AsSpan(0, readTotal),
+                    cipherBuf.AsSpan(0, readTotal),
+                    cipherBuf.AsSpan(readTotal, GcmTagLengthBytes));
+
+                BinaryPrimitives.WriteInt32BigEndian(lenBytes, readTotal);
+                await output.WriteAsync(lenBytes, ct);
+                await output.WriteAsync(cipherBuf.AsMemory(0, readTotal + GcmTagLengthBytes), ct);
+
+                totalPlain += readTotal;
+                onBytesProcessed?.Invoke(totalPlain);
+            }
+
+            // Write authenticated 0-length EOF chunk
+            var eofIv = DeriveChunkIv(baseIv, chunkIndex);
+            var eofTag = new byte[GcmTagLengthBytes];
+            aes.Encrypt(eofIv, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, eofTag);
+            BinaryPrimitives.WriteInt32BigEndian(lenBytes, 0);
+            await output.WriteAsync(lenBytes, ct);
+            await output.WriteAsync(eofTag, ct);
+            await output.FlushAsync(ct);
+        }
+
+        /// <summary>
+        /// Decrypt a stream produced by 64 KB AES-256-GCM chunks.
+        /// </summary>
+        public async Task<long> DecryptStreamChunkedAsync(
+            Stream input,
+            Stream output,
+            Action<long>? onBytesProcessed = null,
+            CancellationToken ct = default)
+        {
+            var key = _sharedSecret ?? throw new InvalidOperationException("Shared secret not established.");
+
+            var baseIv = new byte[GcmIvLengthBytes];
+            await input.ReadExactlyAsync(baseIv, ct);
+
+            var lenBytes = new byte[4];
+            var encryptedBuf = new byte[StreamChunkSize + GcmTagLengthBytes];
+            var plainBuf = new byte[StreamChunkSize];
+            ulong chunkIndex = 0;
+            long totalPlain = 0;
+
+            using var aes = new AesGcm(key, GcmTagLengthBytes);
+
+            while (true)
+            {
+                await input.ReadExactlyAsync(lenBytes, ct);
+                int plainLen = BinaryPrimitives.ReadInt32BigEndian(lenBytes);
+                if (plainLen < 0 || plainLen > StreamChunkSize)
+                    throw new CryptographicException($"Invalid encrypted chunk length: {plainLen}");
+
+                int totalChunkLen = plainLen + GcmTagLengthBytes;
+                await input.ReadExactlyAsync(encryptedBuf.AsMemory(0, totalChunkLen), ct);
+
+                var chunkIv = DeriveChunkIv(baseIv, chunkIndex++);
+                aes.Decrypt(
+                    chunkIv,
+                    encryptedBuf.AsSpan(0, plainLen),
+                    encryptedBuf.AsSpan(plainLen, GcmTagLengthBytes),
+                    plainBuf.AsSpan(0, plainLen));
+
+                if (plainLen == 0) break; // Authenticated EOF reached
+
+                await output.WriteAsync(plainBuf.AsMemory(0, plainLen), ct);
+                totalPlain += plainLen;
+                onBytesProcessed?.Invoke(totalPlain);
+            }
+
+            await output.FlushAsync(ct);
+            return totalPlain;
+        }
+
+        private static byte[] DeriveChunkIv(byte[] baseIv, ulong chunkIndex)
+        {
+            var iv = (byte[])baseIv.Clone();
+            Span<byte> counter = stackalloc byte[8];
+            BinaryPrimitives.WriteUInt64BigEndian(counter, chunkIndex);
+            for (int i = 0; i < 8; i++)
+                iv[4 + i] ^= counter[i];
+            return iv;
         }
 
         /// <summary>

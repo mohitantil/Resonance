@@ -34,3 +34,7 @@ android/local.properties
 android/*.apk
 android/*.aab
 android/.kotlin/
+
+# Local Backups & Dumps
+backups/
+repomix-output.xml

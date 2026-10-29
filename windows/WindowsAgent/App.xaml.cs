@@ -48,7 +48,7 @@ public partial class App : Application
         // Wire immediate download on WebSocket file notification
         SyncEngine.FilesAvailableReceived += () =>
         {
-            _ = FileDownloader.CheckAndDownloadAsync();
+            _ = FileDownloader.FetchAndEnqueuePendingTransfersAsync(TransferQueue);
         };
 
         // Start IPC server to receive files from right-click context menu
@@ -63,12 +63,12 @@ public partial class App : Application
         // Start network monitor & discovery
         Monitor.Start();
 
-        // Process any files passed at startup (e.g. right-click SendTo)
+        // Process any files or folders passed at startup (e.g. right-click SendTo)
         if (e.Args.Length > 0)
         {
-            var validFiles = e.Args.Where(File.Exists).ToArray();
-            if (validFiles.Length > 0)
-                TransferQueue.EnqueueUploads(validFiles);
+            var validPaths = e.Args.Where(p => File.Exists(p) || Directory.Exists(p)).ToArray();
+            if (validPaths.Length > 0)
+                TransferQueue.EnqueueUploads(validPaths);
         }
     }
 

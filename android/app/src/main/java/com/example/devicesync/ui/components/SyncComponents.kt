@@ -249,6 +249,7 @@ fun StorageSettingsCard(
 @Composable
 fun TransferHistoryCard(
     item: TransferItem,
+    activeProgress: com.example.devicesync.FileTransferManager.TransferProgress? = null,
     onOpen: (TransferItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -264,57 +265,80 @@ fun TransferHistoryCard(
         else -> "📄"
     }
 
+    val (statusLabel, statusColor) = when (item.status) {
+        "in_progress" -> {
+            val pct = activeProgress?.percent ?: 0
+            (if (isSent) "↑ Sending ($pct%)" else "↓ Receiving ($pct%)") to SyncColors.Yellow
+        }
+        "failed" -> (if (isSent) "✕ Send Failed" else "✕ Receive Failed") to SyncColors.Red
+        else -> (if (isSent) "↑ Sent to PC ✓" else "↓ Received ✓") to (if (isSent) SyncColors.Blue else SyncColors.Green)
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(enabled = !item.localUriOrPath.isNullOrBlank()) { onOpen(item) },
+            .clickable(enabled = item.status == "completed" && !item.localUriOrPath.isNullOrBlank()) { onOpen(item) },
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = SyncColors.Surface1)
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = iconText, fontSize = 24.sp)
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.fileName,
-                    color = SyncColors.Text,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = iconText, fontSize = 24.sp)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (isSent) "↑ Sent to PC" else "↓ Received",
-                        color = if (isSent) SyncColors.Blue else SyncColors.Green,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                        text = item.fileName,
+                        color = SyncColors.Text,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = FormatUtils.formatBytes(item.fileSize),
-                        color = SyncColors.Subtext,
-                        fontSize = 11.sp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = timeFormat.format(Date(item.timestamp)),
-                        color = SyncColors.Overlay,
-                        fontSize = 11.sp
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = statusLabel,
+                            color = statusColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = FormatUtils.formatBytes(item.fileSize),
+                            color = SyncColors.Subtext,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = timeFormat.format(Date(item.timestamp)),
+                            color = SyncColors.Overlay,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                if (item.status == "completed" && !item.localUriOrPath.isNullOrBlank()) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = "Open",
+                        tint = SyncColors.Subtext,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            if (!item.localUriOrPath.isNullOrBlank()) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                    contentDescription = "Open",
-                    tint = SyncColors.Subtext,
-                    modifier = Modifier.size(18.dp)
+            if (item.status == "in_progress" && activeProgress != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { activeProgress.percent / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = SyncColors.Mauve,
+                    trackColor = SyncColors.Surface0
                 )
             }
         }

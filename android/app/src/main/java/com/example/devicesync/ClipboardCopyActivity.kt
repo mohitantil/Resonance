@@ -7,11 +7,6 @@ import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 
-/**
- * Transparent trampoline activity used to safely write to the system clipboard
- * from notification actions. Because it holds window focus during execution,
- * modern Android (API 29+) fully permits clipboard writes.
- */
 class ClipboardCopyActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -19,6 +14,7 @@ class ClipboardCopyActivity : Activity() {
         val content = intent.getStringExtra(EXTRA_CONTENT)
         if (!content.isNullOrEmpty()) {
             try {
+                SyncForegroundService.markLocalClipboardWrite(content)
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val clip = ClipData.newPlainText("DeviceSync", content)
                 clipboard.setPrimaryClip(clip)

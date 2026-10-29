@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
@@ -64,11 +63,6 @@ object StoragePreferences {
                 .putBoolean(KEY_USE_CUSTOM, false)
                 .apply()
         }
-    }
-
-    fun setUseCustomStorage(context: Context, enabled: Boolean) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putBoolean(KEY_USE_CUSTOM, enabled).apply()
     }
 
     /**
@@ -180,6 +174,21 @@ object StoragePreferences {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to clear IS_PENDING on ${destination.uri}", e)
             }
+        }
+    }
+
+    /**
+     * Deletes an incomplete destination URI if an incoming upload fails or is cancelled mid-stream.
+     */
+    fun deleteDestination(context: Context, destination: TargetDestination) {
+        try {
+            if (destination.isMediaStore) {
+                context.contentResolver.delete(destination.uri, null, null)
+            } else {
+                DocumentFile.fromSingleUri(context, destination.uri)?.delete()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to clean up partial destination ${destination.uri}", e)
         }
     }
 }

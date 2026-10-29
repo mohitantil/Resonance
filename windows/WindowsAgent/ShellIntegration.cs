@@ -41,9 +41,13 @@ namespace WindowsAgent
 
                 var currentDir = Path.GetDirectoryName(currentExe) ?? AppDomain.CurrentDomain.BaseDirectory;
 
-                var psCommand = $"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{shortcutLocation}'); " +
-                                $"$s.TargetPath = '{currentExe}'; " +
-                                $"$s.WorkingDirectory = '{currentDir}'; " +
+                var escShortcut = shortcutLocation.Replace("'", "''");
+                var escExe = currentExe.Replace("'", "''");
+                var escDir = currentDir.Replace("'", "''");
+
+                var psCommand = $"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{escShortcut}'); " +
+                                $"$s.TargetPath = '{escExe}'; " +
+                                $"$s.WorkingDirectory = '{escDir}'; " +
                                 $"$s.Description = 'Send files to Android via DeviceSync'; " +
                                 $"$s.Save()";
 

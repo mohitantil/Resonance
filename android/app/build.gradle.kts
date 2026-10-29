@@ -64,15 +64,12 @@ dependencies {
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.websockets)
-    implementation(libs.ktor.server.cors)
 
     // Room SQLite
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // WebRTC
-    implementation(libs.webrtc)
 
     // Gson for JSON serialization
     implementation(libs.gson)

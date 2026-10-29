@@ -78,6 +78,10 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     /** Pairing request from a new Windows client */
     val pendingConnectionRequest: StateFlow<SyncForegroundService.ConnectionRequest?> = SyncForegroundService.pendingConnectionRequest
 
+    /** Pending pre-flight warning when sending >500 MB over Shared Wi-Fi (Mode B) */
+    var pendingWifiLargeWarning by mutableStateOf<FileTransferManager.PreFlightResult.WarnSwitchToHotspot?>(null)
+        private set
+
     init {
         // Poll connected clients count every second
         viewModelScope.launch {
@@ -123,6 +127,7 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
 
     fun copyToClipboard(clipboardManager: ClipboardManager, text: String) {
         if (text.isEmpty()) return
+        SyncForegroundService.markLocalClipboardWrite(text)
         val clip = android.content.ClipData.newPlainText("DeviceSync", text)
         clipboardManager.setPrimaryClip(clip)
         pasteText = text
@@ -142,23 +147,50 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── File Transfer actions ───────────────────────────────────────────
 
+    fun dismissWifiLargeWarning() {
+        pendingWifiLargeWarning = null
+    }
+
+    fun confirmSendOverWifiAnyway() {
+        val warning = pendingWifiLargeWarning ?: return
+        pendingWifiLargeWarning = null
+        viewModelScope.launch {
+            executeRegistration(warning.uris, isHotspotMode = false)
+        }
+    }
+
     /**
-     * Stage and send selected files (photos, videos, docs) to Windows PC.
+     * Pre-flight and stage selected files (photos, videos, docs) to Windows PC.
      */
     fun sendFiles(uris: List<Uri>) {
         if (uris.isEmpty()) return
 
         viewModelScope.launch {
-            showStatus("Staging ${uris.size} file(s)...")
-            val transfers = FileTransferManager.registerTransfers(getApplication(), uris)
-            if (transfers.isNotEmpty()) {
-                val sizeTotal = transfers.sumOf { it.size }
-                val formatted = FormatUtils.formatBytes(sizeTotal)
-                showStatus("Sent ${transfers.size} file(s) ($formatted) ⚡")
-                selectedTabIndex = 1 // Switch to transfers tab to view progress
-            } else {
-                showStatus("Failed to prepare files")
+            showStatus("Checking ${uris.size} file(s)...")
+            when (val preFlight = FileTransferManager.evaluatePreFlight(getApplication(), uris)) {
+                is FileTransferManager.PreFlightResult.RejectedExceedsMax -> {
+                    val formatted = FormatUtils.formatBytes(preFlight.sizeBytes)
+                    showStatus("Rejected: ${preFlight.fileName} ($formatted) exceeds 5 GB max limit")
+                }
+                is FileTransferManager.PreFlightResult.WarnSwitchToHotspot -> {
+                    pendingWifiLargeWarning = preFlight
+                }
+                is FileTransferManager.PreFlightResult.Ready -> {
+                    executeRegistration(preFlight.uris, preFlight.isHotspotMode)
+                }
             }
+        }
+    }
+
+    private suspend fun executeRegistration(uris: List<Uri>, isHotspotMode: Boolean) {
+        val transfers = FileTransferManager.registerTransfers(getApplication(), uris, isHotspotMode)
+        if (transfers.isNotEmpty()) {
+            val sizeTotal = transfers.sumOf { it.size }
+            val formatted = FormatUtils.formatBytes(sizeTotal)
+            showStatus("Queued ${transfers.size} file(s) ($formatted) ⚡")
+            selectedTabIndex = 1 // Switch to transfers tab to view progress
+        } else {
+            showStatus("Failed to prepare files")
         }
     }
 
@@ -168,6 +200,8 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
     fun revokeTrustedDevice(deviceId: String) {
         viewModelScope.launch {
             trustedDeviceDao.deleteById(deviceId)
+            SyncForegroundService.revokeAndDisconnectDevice(deviceId)
+            showStatus("Revoked device access ✓")
         }
     }
 
@@ -203,7 +237,7 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
                 source = "android",
                 content = text
             )
-            SyncForegroundService.sendToAllClients(gson.toJson(payload))
+            SyncForegroundService.sendEncryptedToAllClients(gson.toJson(payload))
         }
     }
 
@@ -214,5 +248,4 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
             if (sendStatus == message) sendStatus = ""
         }
     }
-
 }
